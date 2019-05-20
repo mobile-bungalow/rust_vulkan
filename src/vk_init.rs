@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::device::{Device, DeviceExtensions};
@@ -19,30 +21,31 @@ use winit::{Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
 use std::sync::Arc;
 
-
 /// struct which contains all of the important parts of the vulkan set up
 pub struct VKState<'a> {
-     vk: Arc<Instance>, //? The root instance of vulkan, used for a lot of other calls
-     device: PhysicalDevice<'a>,
+    vk: Arc<Instance>, //? The root instance of vulkan, used for a lot of other calls
+    device: PhysicalDevice<'a>,
 }
 
-/// incredibly general set up call for a vulkan rasterizier
-pub fn vk_setup() -> VKState<'static> {
-    
-    // initialize instance of vulkan
-    let vk = Instance::new(None, &vulkano_win::required_extensions(), None).unwrap(); 
-    
-    // initialize gpu (device)
-    let dev = PhysicalDevice::enumerate(&vk.clone()).next().unwrap();
+impl VKState<'static> {
+    /// incredibly general set up call for a vulkan rasterizier
+    pub fn setup() -> VKState<'static> {
+        let vk = Instance::new(None, &vulkano_win::required_extensions(), None).unwrap();
 
-    VKState { vk: vk.clone(), device: dev}
+        // initialize gpu (device)
+        let dev = PhysicalDevice::enumerate(&vk).next().unwrap();
 
-}
-
-pub fn win_setup(vk: &mut VKState) {
-
-    let mut events_loop = EventsLoop::new();
-    let surface = WindowBuilder::new().build_vk_surface(&events_loop, vk.vk.clone()).unwrap();
-    let window = surface.window();
-
+        let vkstate = VKState {
+            vk: vk.clone(),
+            device: dev,
+        };
+        vkstate
+    }
+    pub fn win_setup(vk: &mut VKState) {
+        let mut events_loop = EventsLoop::new();
+        let surface = WindowBuilder::new()
+            .build_vk_surface(&events_loop, vk.vk.clone())
+            .unwrap();
+        let window = surface.window();
+    }
 }
