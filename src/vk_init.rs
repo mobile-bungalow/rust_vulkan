@@ -28,9 +28,6 @@ pub struct VKState<'a> {
 }
 
 impl VKState<'static> {
-    /// incredibly general set up call for a vulkan rasterizier
-    pub fn setup() -> VKState<'static> {
-        let vk = Instance::new(None, &vulkano_win::required_extensions(), None).unwrap();
 
         // initialize gpu (device)
         let dev = PhysicalDevice::enumerate(&vk).next().unwrap();
