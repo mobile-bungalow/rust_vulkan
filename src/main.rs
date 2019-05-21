@@ -2,10 +2,13 @@
 use std::path::Path;
 use tobj;
 
+use vulkano::instance::PhysicalDevice;
 /// arg parse
 use clap::{Arg,App};
 
 mod vk_init;
+
+use vk_init::VKState;
 
 fn main() {
 
@@ -28,10 +31,10 @@ let matches = App::new("vk_obj")
     assert!(obj_file.is_ok());
     let (models, materials) = obj_file.unwrap();
     
-
     // init vulkan instance
-     let mut vks : vk_init::VKState = vk_init::vk_setup();
-        
+    let mut vks : VKState = VKState::new();
+    // getting devices still has to be done at top scope 
+    vks.device = PhysicalDevice::enumerate(&vks.vk).next();
 
 }
 

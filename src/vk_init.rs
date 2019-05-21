@@ -23,19 +23,20 @@ use std::sync::Arc;
 
 /// struct which contains all of the important parts of the vulkan set up
 pub struct VKState<'a> {
-    vk: Arc<Instance>, //? The root instance of vulkan, used for a lot of other calls
-    device: PhysicalDevice<'a>,
+    pub vk: Arc<Instance>, //? The root instance of vulkan, used for a lot of other calls
+    pub device: Option<PhysicalDevice<'a>>,
 }
 
 impl VKState<'static> {
-
-        // initialize gpu (device)
-        let dev = PhysicalDevice::enumerate(&vk).next().unwrap();
+    
+    pub fn new<'a>() -> VKState<'a> {
+        let vk = Instance::new(None, &vulkano_win::required_extensions(), None).unwrap();
 
         let vkstate = VKState {
-            vk: vk.clone(),
-            device: dev,
+            vk: vk,
+            device: None,
         };
+
         vkstate
     }
     pub fn win_setup(vk: &mut VKState) {
