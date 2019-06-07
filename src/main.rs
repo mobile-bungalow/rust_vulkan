@@ -42,6 +42,8 @@ use clap::{App, Arg};
 
 mod inserts;
 
+static DAMPENING: f32 = 0.01;
+
 mod vs {
     vulkano_shaders::shader! {
     ty: "vertex",
@@ -230,11 +232,10 @@ fn main() {
 
     let mut previous_frame = Box::new(sync::now(device.clone())) as Box<GpuFuture>;
 
-    let rotation_start = Instant::now();
-
     // these are used to rotate the world projection
-    let y_delta: f32 = 0.0;
-    let z_delta: f32 = 0.0;
+    let mut y_delta: f32 = 0.0;
+    let mut x_delta: f32 = 0.0;
+    let mut mouse_state: winit::ElementState = winit::ElementState::Released;
 
     loop {
         previous_frame.cleanup_finished();
@@ -269,10 +270,8 @@ fn main() {
         }
 
         let uniform_buffer_subbuffer = {
-            let elapsed = rotation_start.elapsed();
             let rotation =
-                elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
-            let rotation = Matrix3::from_angle_x(Rad(1.0 as f32));
+                { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_z(Rad(y_delta)) };
 
             // note: this teapot was meant for OpenGL where the origin is at the lower left
             //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
@@ -369,6 +368,20 @@ fn main() {
                 event: winit::WindowEvent::Resized(_),
                 ..
             } => recreate_swapchain = true,
+            winit::Event::WindowEvent {
+                event: winit::WindowEvent::MouseInput { state: s, .. },
+                ..
+            } => (mouse_state = s),
+            winit::Event::DeviceEvent {
+                event: winit::DeviceEvent::MouseMotion { delta: (x, y), .. },
+                ..
+            } => match mouse_state {
+                winit::ElementState::Pressed => {
+                    x_delta += DAMPENING * y as f32;
+                    y_delta -= DAMPENING * x as f32;
+                }
+                winit::ElementState::Released => {}
+            },
             _ => (),
         });
         if done {
@@ -377,6 +390,7 @@ fn main() {
     }
 }
 
+/// A window resizing function , nithing to do with the loop.
 fn window_size_dependent_setup(
     device: Arc<Device>,
     vs: &vs::Shader,
