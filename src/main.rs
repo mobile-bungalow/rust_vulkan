@@ -2,7 +2,6 @@
 use std::path::Path;
 
 use std::iter;
-use std::time::Instant;
 
 /// types from the object parser
 use tobj;
@@ -33,7 +32,7 @@ use vulkano::sync;
 use vulkano::sync::GpuFuture;
 use vulkano_win::VkSurfaceBuild;
 
-use winit::{Event, EventsLoop, MouseButton, Window, WindowBuilder, WindowEvent};
+use winit::{Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
 use std::sync::Arc;
 
@@ -117,8 +116,78 @@ fn main() {
     // parse object with tiny object loader
     let obj_file = tobj::load_obj(&Path::new(matches.value_of("input").unwrap()));
     assert!(obj_file.is_ok());
-    // The start of this example is exactly the same as `triangle`. You should read the
-    // `triangle` example if you haven't done so yet.
+
+    let (geom, _mats) = obj_file.unwrap();
+
+    // break the positions up into groups of three
+    let model_verts: Vec<placeholder::Vertex> = geom[0]
+        .mesh
+        .positions
+        .chunks(3)
+        .map(|chunk| placeholder::Vertex {
+            position: (chunk[0], chunk[1], chunk[2]),
+        })
+        .collect();
+
+    // init to zeroes
+    let mut model_normals: Vec<placeholder::Normal> = vec![
+        placeholder::Normal {
+            normal: (0.0, 0.0, 0.0),
+        };
+        model_verts.len()
+    ];
+
+    geom[0]
+        .mesh
+        .indices
+        .chunks(3)
+        .map(|a| ((a[0]) as usize, a[1] as usize, a[2] as usize))
+        .for_each(|(i_a, i_b, i_c)| {
+            // the indices into the model vertex triples vector
+            // which indicates one vector of a face
+
+            let v_a = {
+                let i = model_verts[i_a];
+                cgmath::Vector3::new(i.position.0, i.position.1, i.position.2)
+            };
+
+            let v_b = {
+                let i = model_verts[i_b];
+                cgmath::Vector3::new(i.position.0, i.position.1, i.position.2)
+            };
+
+            let v_c = {
+                let i = model_verts[i_c];
+                cgmath::Vector3::new(i.position.0, i.position.1, i.position.2)
+            };
+
+            let cross = (v_b - v_a).cross(v_c - v_b);
+
+            model_normals[i_a].normal.0 += cross.x;
+            model_normals[i_a].normal.1 += cross.y;
+            model_normals[i_a].normal.2 += cross.z;
+
+            model_normals[i_b].normal.0 += cross.x;
+            model_normals[i_b].normal.1 += cross.y;
+            model_normals[i_b].normal.2 += cross.z;
+
+            model_normals[i_c].normal.0 += cross.x;
+            model_normals[i_c].normal.1 += cross.y;
+            model_normals[i_c].normal.2 += cross.z;
+        });
+
+    // case and point for moving everything to cgmath
+    for i in 0..model_normals.len() {
+        let mut vec = cgmath::Vector3::new(
+            model_normals[i].normal.0,
+            model_normals[i].normal.1,
+            model_normals[i].normal.2,
+        );
+        vec /= (vec.x.powf(2.0) + vec.y.powf(2.0) + vec.z.powf(2.0)).sqrt();
+        model_normals[i].normal.0 = vec.x;
+        model_normals[i].normal.1 = vec.y;
+        model_normals[i].normal.2 = vec.z;
+    }
 
     let extensions = vulkano_win::required_extensions();
     let instance = Instance::new(None, &extensions, None).unwrap();
@@ -185,17 +254,29 @@ fn main() {
         .unwrap()
     };
 
-    let vertices = placeholder::VERTICES.iter().cloned();
-    let vertex_buffer =
-        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), vertices).unwrap();
+    //let vertices = placeholder::VERTICES.iter().cloned();
+    let vertex_buffer = CpuAccessibleBuffer::from_iter(
+        device.clone(),
+        BufferUsage::all(),
+        model_verts.iter().cloned(),
+    )
+    .unwrap();
 
-    let normals = placeholder::NORMALS.iter().cloned();
-    let normals_buffer =
-        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), normals).unwrap();
+    //let normals = placeholder::NORMALS.iter().cloned();
+    let normals_buffer = CpuAccessibleBuffer::from_iter(
+        device.clone(),
+        BufferUsage::all(),
+        model_normals.iter().cloned(),
+    )
+    .unwrap();
 
-    let indices = placeholder::INDICES.iter().cloned();
-    let index_buffer =
-        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), indices).unwrap();
+    //let indices = placeholder::INDICES.iter().cloned();
+    let index_buffer = CpuAccessibleBuffer::from_iter(
+        device.clone(),
+        BufferUsage::all(),
+        geom[0].mesh.indices.iter().cloned(),
+    )
+    .unwrap();
 
     let uniform_buffer = CpuBufferPool::<vs::ty::Data>::new(device.clone(), BufferUsage::all());
 
@@ -271,7 +352,7 @@ fn main() {
 
         let uniform_buffer_subbuffer = {
             let rotation =
-                { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_z(Rad(y_delta)) };
+                { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_y(Rad(y_delta)) };
 
             // note: this teapot was meant for OpenGL where the origin is at the lower left
             //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
@@ -285,7 +366,7 @@ fn main() {
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, -1.0, 0.0),
             );
-            let scale = Matrix4::from_scale(0.007);
+            let scale = Matrix4::from_scale(0.1);
 
             let uniform_data = vs::ty::Data {
                 world: Matrix4::from(rotation).into(),

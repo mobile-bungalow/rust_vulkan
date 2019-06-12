@@ -1,19 +1,22 @@
 
+use tobj;
+use std::vec;
 
 #[macro_use]
 use vulkano::impl_vertex;
 
 #[derive(Copy, Clone)]
 pub struct Vertex {
-    position: (f32, f32, f32)
+    pub position: (f32, f32, f32)
 }
 
 impl_vertex!(Vertex, position);
 
+
 pub const VERTICES: [Vertex; 531] = [
     Vertex { position: (0.0, 0.0, 0.0) },   // dummy vector because in the original model indices
                                             // start at 1
-    Vertex { position: (40.6266, 28.3457, -1.10804) },
+    Vertex { position: (40.6266, 28.3457, -1.10804) }, 
     Vertex { position: (40.0714, 30.4443, -1.10804) },
     Vertex { position: (40.7155, 31.1438, -1.10804) },
     Vertex { position: (42.0257, 30.4443, -1.10804) },
@@ -547,7 +550,7 @@ pub const VERTICES: [Vertex; 531] = [
 
 #[derive(Copy, Clone)]
 pub struct Normal {
-    normal: (f32, f32, f32)
+    pub normal: (f32, f32, f32)
 }
 
 impl_vertex!(Normal, normal);
@@ -2111,5 +2114,5 @@ pub const INDICES: [u16; 3072] = [
     469, 468, 528,
     528, 529, 469,
     470, 469, 529,
-    529, 530, 470u16,
+    529, 530, 470,
 ];
