@@ -13,13 +13,15 @@ cargo run -- --input test_objs/teapot.obj
 it may exit with a panic if your file is in the wrong format. or if you resize the window too fast.
 
 ---
+#### Caveats
 
-currently only supports single objects
+1. currently only supports single objects
 
 ---
 
 TODO : 
 
-[] skybox
-[] refraction in glsl
-[] refactor code into structs
+[ ] skybox
+[ ] move all vertex and index data to cgmath if possible
+[ ] refraction in glsl
+[ ] refactor code into structs
