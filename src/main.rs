@@ -6,8 +6,8 @@ use std::iter;
 /// types from the object parser
 use tobj;
 
-/// This is a placeholder, should be removed once the obj parser is up and running!
-mod placeholder;
+/// This is a geometry, should be removed once the obj parser is up and running!
+mod geometry;
 
 /// Vulkan imports, these are manifold , low level, and sinful.
 use cgmath::{Matrix3, Matrix4, Point3, Rad, Vector3};
@@ -15,31 +15,26 @@ use vulkano::buffer::cpu_pool::CpuBufferPool;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
-use vulkano::device::{Device, DeviceExtensions};
+use vulkano::device::Device;
 use vulkano::format::Format;
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
 use vulkano::image::attachment::AttachmentImage;
 use vulkano::image::SwapchainImage;
-use vulkano::instance::{Instance, PhysicalDevice};
 use vulkano::pipeline::vertex::TwoBuffersDefinition;
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 use vulkano::swapchain;
-use vulkano::swapchain::{
-    AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError,
-};
+use vulkano::swapchain::{AcquireError, SwapchainCreationError};
 use vulkano::sync;
 use vulkano::sync::GpuFuture;
-use vulkano_win::VkSurfaceBuild;
-
-use winit::{Event, EventsLoop, Window, WindowBuilder, WindowEvent};
+use winit::Window;
 
 use std::sync::Arc;
 
 /// arg parse
 use clap::{App, Arg};
 
-mod inserts;
+mod vk;
 
 static DAMPENING: f32 = 0.01;
 
@@ -120,176 +115,56 @@ fn main() {
     let (geom, _mats) = obj_file.unwrap();
 
     // break the positions up into groups of three
-    let model_verts: Vec<placeholder::Vertex> = geom[0]
+    let model_verts: Vec<geometry::Vertex> = geom[0]
         .mesh
         .positions
-        .chunks(3)
-        .map(|chunk| placeholder::Vertex {
+        .chunks(3) //breaks into chunks of threes
+        .map(|chunk| geometry::Vertex {
             position: (chunk[0], chunk[1], chunk[2]),
         })
         .collect();
 
-    // init to zeroes
-    let mut model_normals: Vec<placeholder::Normal> = vec![
-        placeholder::Normal {
-            normal: (0.0, 0.0, 0.0),
-        };
-        model_verts.len()
-    ];
+    // generate the normals for the model at each vertex
+    let model_normals = geometry::norms_from_verts_and_index(&model_verts, &geom[0].mesh.indices);
 
-    geom[0]
-        .mesh
-        .indices
-        .chunks(3)
-        .map(|a| ((a[0]) as usize, a[1] as usize, a[2] as usize))
-        .for_each(|(i_a, i_b, i_c)| {
-            // the indices into the model vertex triples vector
-            // which indicates one vector of a face
+    let mut vk_state: vk::VKState = vk::VKState::vk_init().expect("initialization failed \n");
+    let window = vk_state.surface.window();
 
-            let v_a = {
-                let i = model_verts[i_a];
-                cgmath::Vector3::new(i.position.0, i.position.1, i.position.2)
-            };
-
-            let v_b = {
-                let i = model_verts[i_b];
-                cgmath::Vector3::new(i.position.0, i.position.1, i.position.2)
-            };
-
-            let v_c = {
-                let i = model_verts[i_c];
-                cgmath::Vector3::new(i.position.0, i.position.1, i.position.2)
-            };
-
-            let cross = (v_b - v_a).cross(v_c - v_b);
-
-            model_normals[i_a].normal.0 += cross.x;
-            model_normals[i_a].normal.1 += cross.y;
-            model_normals[i_a].normal.2 += cross.z;
-
-            model_normals[i_b].normal.0 += cross.x;
-            model_normals[i_b].normal.1 += cross.y;
-            model_normals[i_b].normal.2 += cross.z;
-
-            model_normals[i_c].normal.0 += cross.x;
-            model_normals[i_c].normal.1 += cross.y;
-            model_normals[i_c].normal.2 += cross.z;
-        });
-
-    // case and point for moving everything to cgmath
-    for i in 0..model_normals.len() {
-        let mut vec = cgmath::Vector3::new(
-            model_normals[i].normal.0,
-            model_normals[i].normal.1,
-            model_normals[i].normal.2,
-        );
-        vec /= (vec.x.powf(2.0) + vec.y.powf(2.0) + vec.z.powf(2.0)).sqrt();
-        model_normals[i].normal.0 = vec.x;
-        model_normals[i].normal.1 = vec.y;
-        model_normals[i].normal.2 = vec.z;
-    }
-
-    let extensions = vulkano_win::required_extensions();
-    let instance = Instance::new(None, &extensions, None).unwrap();
-
-    let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
-
-    let mut events_loop = winit::EventsLoop::new();
-
-    let surface = winit::WindowBuilder::new()
-        .build_vk_surface(&events_loop, instance.clone())
-        .unwrap();
-    let window = surface.window();
-
-    // unlike the triangle example we need to keep track of the width and height so we can calculate
-    // render the teapot with the correct aspect ratio.
-    let mut dimensions = if let Some(dimensions) = window.get_inner_size() {
-        let dimensions: (u32, u32) = dimensions.to_physical(window.get_hidpi_factor()).into();
-        [dimensions.0, dimensions.1]
-    } else {
-        return;
-    };
-
-    let queue_family = physical
-        .queue_families()
-        .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
-        .unwrap();
-
-    let device_ext = DeviceExtensions {
-        khr_swapchain: true,
-        ..DeviceExtensions::none()
-    };
-
-    let (device, mut queues) = Device::new(
-        physical,
-        physical.supported_features(),
-        &device_ext,
-        [(queue_family, 0.5)].iter().cloned(),
-    )
-    .unwrap();
-
-    let queue = queues.next().unwrap();
-
-    let (mut swapchain, images) = {
-        let caps = surface.capabilities(physical).unwrap();
-        let usage = caps.supported_usage_flags;
-        let format = caps.supported_formats[0].0;
-        let alpha = caps.supported_composite_alpha.iter().next().unwrap();
-
-        Swapchain::new(
-            device.clone(),
-            surface.clone(),
-            caps.min_image_count,
-            format,
-            dimensions,
-            1,
-            usage,
-            &queue,
-            SurfaceTransform::Identity,
-            alpha,
-            PresentMode::Fifo,
-            true,
-            None,
-        )
-        .unwrap()
-    };
-
-    //let vertices = placeholder::VERTICES.iter().cloned();
     let vertex_buffer = CpuAccessibleBuffer::from_iter(
-        device.clone(),
+        vk_state.device.clone(),
         BufferUsage::all(),
         model_verts.iter().cloned(),
     )
     .unwrap();
 
-    //let normals = placeholder::NORMALS.iter().cloned();
     let normals_buffer = CpuAccessibleBuffer::from_iter(
-        device.clone(),
+        vk_state.device.clone(),
         BufferUsage::all(),
         model_normals.iter().cloned(),
     )
     .unwrap();
 
-    //let indices = placeholder::INDICES.iter().cloned();
     let index_buffer = CpuAccessibleBuffer::from_iter(
-        device.clone(),
+        vk_state.device.clone(),
         BufferUsage::all(),
         geom[0].mesh.indices.iter().cloned(),
     )
     .unwrap();
 
-    let uniform_buffer = CpuBufferPool::<vs::ty::Data>::new(device.clone(), BufferUsage::all());
+    let uniform_buffer =
+        CpuBufferPool::<vs::ty::Data>::new(vk_state.device.clone(), BufferUsage::all());
 
-    let vs = vs::Shader::load(device.clone()).unwrap();
-    let fs = fs::Shader::load(device.clone()).unwrap();
+    // compile frag and vertex shaders here
+    let vs = vs::Shader::load(vk_state.device.clone()).unwrap();
+    let fs = fs::Shader::load(vk_state.device.clone()).unwrap();
 
     let render_pass = Arc::new(
-        vulkano::single_pass_renderpass!(device.clone(),
+        vulkano::single_pass_renderpass!(vk_state.device.clone(),
             attachments: {
                 color: {
                     load: Clear,
                     store: Store,
-                    format: swapchain.format(),
+                    format: vk_state.swapchain.format(),
                     samples: 1,
                 },
                 depth: {
@@ -307,13 +182,22 @@ fn main() {
         .unwrap(),
     );
 
-    let (mut pipeline, mut framebuffers) =
-        window_size_dependent_setup(device.clone(), &vs, &fs, &images, render_pass.clone());
-    let mut recreate_swapchain = false;
+    // todo: figure out what the hell these are for
+    // they are an abstract part of this boilerplate
+    let (mut pipeline, mut framebuffers) = window_size_dependent_setup(
+        vk_state.device.clone(),
+        &vs,
+        &fs,
+        &vk_state.images,
+        render_pass.clone(),
+    );
 
-    let mut previous_frame = Box::new(sync::now(device.clone())) as Box<GpuFuture>;
+    let mut recreate_swapchain = false;
+    let mut previous_frame = Box::new(sync::now(vk_state.device.clone())) as Box<GpuFuture>;
 
     // these are used to rotate the world projection
+    // modifed in the mouse events after each frame,
+    // used in the uniform sub buffer each frame
     let mut y_delta: f32 = 0.0;
     let mut x_delta: f32 = 0.0;
     let mut mouse_state: winit::ElementState = winit::ElementState::Released;
@@ -322,7 +206,7 @@ fn main() {
         previous_frame.cleanup_finished();
 
         if recreate_swapchain {
-            dimensions = if let Some(dimensions) = window.get_inner_size() {
+            vk_state.dimensions = if let Some(dimensions) = window.get_inner_size() {
                 let dimensions: (u32, u32) =
                     dimensions.to_physical(window.get_hidpi_factor()).into();
                 [dimensions.0, dimensions.1]
@@ -330,15 +214,18 @@ fn main() {
                 return;
             };
 
-            let (new_swapchain, new_images) = match swapchain.recreate_with_dimension(dimensions) {
+            let (new_swapchain, new_images) = match vk_state
+                .swapchain
+                .recreate_with_dimension(vk_state.dimensions)
+            {
                 Ok(r) => r,
                 Err(SwapchainCreationError::UnsupportedDimensions) => continue,
                 Err(err) => panic!("{:?}", err),
             };
-            swapchain = new_swapchain;
+            vk_state.swapchain = new_swapchain;
 
             let (new_pipeline, new_framebuffers) = window_size_dependent_setup(
-                device.clone(),
+                vk_state.device.clone(),
                 &vs,
                 &fs,
                 &new_images,
@@ -350,13 +237,15 @@ fn main() {
             recreate_swapchain = false;
         }
 
+        // !! important !! this is what gets fed to our friends
+        // the vertex and frag shaders.
         let uniform_buffer_subbuffer = {
             let rotation =
                 { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_y(Rad(y_delta)) };
 
             // note: this teapot was meant for OpenGL where the origin is at the lower left
             //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
-            let aspect_ratio = dimensions[0] as f32 / dimensions[1] as f32;
+            let aspect_ratio = vk_state.dimensions[0] as f32 / vk_state.dimensions[1] as f32;
 
             let proj =
                 cgmath::perspective(Rad(std::f32::consts::FRAC_PI_2), aspect_ratio, 0.01, 100.0);
@@ -386,7 +275,7 @@ fn main() {
         );
 
         let (image_num, acquire_future) =
-            match swapchain::acquire_next_image(swapchain.clone(), None) {
+            match swapchain::acquire_next_image(vk_state.swapchain.clone(), None) {
                 Ok(r) => r,
                 Err(AcquireError::OutOfDate) => {
                     recreate_swapchain = true;
@@ -395,34 +284,40 @@ fn main() {
                 Err(err) => panic!("{:?}", err),
             };
 
-        let command_buffer =
-            AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
-                .unwrap()
-                .begin_render_pass(
-                    framebuffers[image_num].clone(),
-                    false,
-                    vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
-                )
-                .unwrap()
-                .draw_indexed(
-                    pipeline.clone(),
-                    &DynamicState::none(),
-                    vec![vertex_buffer.clone(), normals_buffer.clone()],
-                    index_buffer.clone(),
-                    set.clone(),
-                    (),
-                )
-                .unwrap()
-                .end_render_pass()
-                .unwrap()
-                .build()
-                .unwrap();
+        let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
+            vk_state.device.clone(),
+            vk_state.queue.family(),
+        )
+        .unwrap()
+        .begin_render_pass(
+            framebuffers[image_num].clone(),
+            false,
+            vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
+        )
+        .unwrap()
+        .draw_indexed(
+            pipeline.clone(),
+            &DynamicState::none(),
+            vec![vertex_buffer.clone(), normals_buffer.clone()],
+            index_buffer.clone(),
+            set.clone(),
+            (),
+        )
+        .unwrap()
+        .end_render_pass()
+        .unwrap()
+        .build()
+        .unwrap();
 
         let future = previous_frame
             .join(acquire_future)
-            .then_execute(queue.clone(), command_buffer)
+            .then_execute(vk_state.queue.clone(), command_buffer)
             .unwrap()
-            .then_swapchain_present(queue.clone(), swapchain.clone(), image_num)
+            .then_swapchain_present(
+                vk_state.queue.clone(),
+                vk_state.swapchain.clone(),
+                image_num,
+            )
             .then_signal_fence_and_flush();
 
         match future {
@@ -431,16 +326,19 @@ fn main() {
             }
             Err(sync::FlushError::OutOfDate) => {
                 recreate_swapchain = true;
-                previous_frame = Box::new(sync::now(device.clone())) as Box<_>;
+                previous_frame = Box::new(sync::now(vk_state.device.clone())) as Box<_>;
             }
             Err(e) => {
                 println!("{:?}", e);
-                previous_frame = Box::new(sync::now(device.clone())) as Box<_>;
+                previous_frame = Box::new(sync::now(vk_state.device.clone())) as Box<_>;
             }
         }
 
         let mut done = false;
-        events_loop.poll_events(|ev| match ev {
+
+        // the loop that parses user events
+        // very simple and high level! I love it.
+        vk_state.events_loop.poll_events(|ev| match ev {
             winit::Event::WindowEvent {
                 event: winit::WindowEvent::CloseRequested,
                 ..
@@ -472,6 +370,9 @@ fn main() {
 }
 
 /// A window resizing function , nithing to do with the loop.
+/// I did not write this shit it is beyond me. It also
+/// SEG FAULTS HARDCORE...
+/// TODO: make this never get called.
 fn window_size_dependent_setup(
     device: Arc<Device>,
     vs: &vs::Shader,
@@ -508,10 +409,7 @@ fn window_size_dependent_setup(
     // https://computergraphics.stackexchange.com/questions/5742/vulkan-best-way-of-updating-pipeline-viewport
     let pipeline = Arc::new(
         GraphicsPipeline::start()
-            .vertex_input(TwoBuffersDefinition::<
-                placeholder::Vertex,
-                placeholder::Normal,
-            >::new())
+            .vertex_input(TwoBuffersDefinition::<geometry::Vertex, geometry::Normal>::new())
             .vertex_shader(vs.main_entry_point(), ())
             .triangle_list()
             .viewports_dynamic_scissors_irrelevant(1)

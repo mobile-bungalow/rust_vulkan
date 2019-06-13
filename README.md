@@ -24,4 +24,5 @@ TODO :
 - [ ] skybox
 - [ ] move all vertex and index data to cgmath if possible
 - [ ] refraction in glsl
-- [ ] refactor code into structs
+- [X] refactor code into structs
+- [ ] refactor even more code into structs
