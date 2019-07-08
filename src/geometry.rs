@@ -17,7 +17,7 @@ impl_vertex!(Vertex, position);
 pub struct Normal {
     pub normal: (f32, f32, f32),
 }
-/// same as other do to
+// same as other do to
 impl_vertex!(Normal, normal);
 
 // static SBIDIM: f32 = 100.0;

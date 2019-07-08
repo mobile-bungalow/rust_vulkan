@@ -9,8 +9,14 @@ use tobj;
 /// This is a geometry, should be removed once the obj parser is up and running!
 mod geometry;
 
+/// This loads textures the skybox textures and indices
+mod skybox;
+
 /// Vulkan imports, these are manifold , low level, and sinful.
 use cgmath::{Matrix3, Matrix4, Point3, Rad, Vector3};
+use image::ImageFormat;
+use skybox::SkyBox;
+
 use vulkano::buffer::cpu_pool::CpuBufferPool;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
@@ -54,12 +60,13 @@ layout(set = 0, binding = 0) uniform Data {
     mat4 world;
     mat4 view;
     mat4 proj;
+    mat4 translate;
 } uniforms;
 
 void main() {
     mat4 worldview = uniforms.view * uniforms.world;
     v_normal = transpose(inverse(mat3(worldview))) * normal;
-    gl_Position = uniforms.proj * worldview * vec4(position, 1.0);
+    gl_Position = uniforms.proj * worldview * (uniforms.translate * vec4(position, 1.0)) ;
 }
 
 ",
@@ -114,6 +121,8 @@ fn main() {
 
     let (geom, _mats) = obj_file.unwrap();
 
+    let skybox = SkyBox::new();
+
     // break the positions up into groups of three
     let model_verts: Vec<geometry::Vertex> = geom[0]
         .mesh
@@ -123,6 +132,7 @@ fn main() {
             position: (chunk[0], chunk[1], chunk[2]),
         })
         .collect();
+
 
     // generate the normals for the model at each vertex
     let model_normals = geometry::norms_from_verts_and_index(&model_verts, &geom[0].mesh.indices);
@@ -242,7 +252,6 @@ fn main() {
         let uniform_buffer_subbuffer = {
             let rotation =
                 { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_y(Rad(y_delta)) };
-
             // note: this teapot was meant for OpenGL where the origin is at the lower left
             //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
             let aspect_ratio = vk_state.dimensions[0] as f32 / vk_state.dimensions[1] as f32;
@@ -255,12 +264,16 @@ fn main() {
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, -1.0, 0.0),
             );
+
             let scale = Matrix4::from_scale(0.1);
+
+            let translate = Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0));
 
             let uniform_data = vs::ty::Data {
                 world: Matrix4::from(rotation).into(),
                 view: (view * scale).into(),
                 proj: proj.into(),
+                translate: translate.into(),
             };
 
             uniform_buffer.next(uniform_data).unwrap()
@@ -367,6 +380,7 @@ fn main() {
             return;
         }
     }
+
 }
 
 /// A window resizing function , nithing to do with the loop.
