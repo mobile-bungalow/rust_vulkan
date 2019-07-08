@@ -214,9 +214,21 @@ fn main() {
     let mut mouse_state: winit::ElementState = winit::ElementState::Released;
 
     // translation matrix
-    let extent = extent[0] + extent[1];
-    let (x, y, z) = (extent / 2.0).position;
+    // which moves the model to the origin.
+    let offset = extent[0] + extent[1];
+    let (x, y, z) = (offset / 2.0).position;
     let translate = Matrix4::from_translation(Vector3::new(-x, -y, -z));
+    // scale everything s.t. it never exceeds three units in any direction.
+    let (i, j, k) = extent[0].position;
+    let (l, m, n) = extent[1].position;
+    let mut max = std::f32::MIN;
+
+    for val in [i, j, k, l, m, n].iter().map(|x| x.abs()) {
+        max = if val > max { val } else { max };
+    }
+    // scale is whatever reduces the largest
+    // dimension to 0.3, because that is a nice size .
+    let scale = 0.3 / max;
 
     loop {
         previous_frame.cleanup_finished();
@@ -275,13 +287,12 @@ fn main() {
                 Vector3::new(0.0, -1.0, 0.0),
             );
 
-            let scale = Matrix4::from_scale(0.05);
-
+            let scale = Matrix4::from_scale(scale);
 
             let uniform_data = vs::ty::Data {
                 world: Matrix4::from(rotation).into(),
                 view: (view * scale).into(),
-                proj: proj.into(),
+                proj: (proj).into(),
                 translate: translate.into(),
             };
 
