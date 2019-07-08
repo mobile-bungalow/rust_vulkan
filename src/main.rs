@@ -135,7 +135,8 @@ fn main() {
 
 
     // generate the normals for the model at each vertex
-    let model_normals = geometry::norms_from_verts_and_index(&model_verts, &geom[0].mesh.indices);
+    let (model_normals, extent) =
+        geometry::norms_from_verts_and_index(&model_verts, &geom[0].mesh.indices);
 
     let mut vk_state: vk::VKState = vk::VKState::vk_init().expect("initialization failed \n");
     let window = vk_state.surface.window();
@@ -212,6 +213,11 @@ fn main() {
     let mut x_delta: f32 = 0.0;
     let mut mouse_state: winit::ElementState = winit::ElementState::Released;
 
+    // translation matrix
+    let extent = extent[0] + extent[1];
+    let (x, y, z) = (extent / 2.0).position;
+    let translate = Matrix4::from_translation(Vector3::new(-x, -y, -z));
+
     loop {
         previous_frame.cleanup_finished();
 
@@ -256,8 +262,12 @@ fn main() {
             //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
             let aspect_ratio = vk_state.dimensions[0] as f32 / vk_state.dimensions[1] as f32;
 
-            let proj =
-                cgmath::perspective(Rad(std::f32::consts::FRAC_PI_2), aspect_ratio, 0.01, 100.0);
+            let proj = cgmath::perspective(
+                Rad(std::f32::consts::FRAC_PI_2 / 2.0),
+                aspect_ratio,
+                0.01,
+                100.0,
+            );
 
             let view = Matrix4::look_at(
                 Point3::new(0.3, 0.3, 1.0),
@@ -265,9 +275,8 @@ fn main() {
                 Vector3::new(0.0, -1.0, 0.0),
             );
 
-            let scale = Matrix4::from_scale(0.1);
+            let scale = Matrix4::from_scale(0.05);
 
-            let translate = Matrix4::from_translation(Vector3::new(0.0, 0.0, 0.0));
 
             let uniform_data = vs::ty::Data {
                 world: Matrix4::from(rotation).into(),

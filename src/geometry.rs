@@ -1,11 +1,38 @@
-use vulkano::impl_vertex;
 
+use std::ops;
+use vulkano::impl_vertex;
 #[derive(Copy, Clone)]
 pub struct Vertex {
     pub position: (f32, f32, f32),
 }
 
 impl_vertex!(Vertex, position);
+
+impl ops::Add<Vertex> for Vertex {
+    type Output = Vertex;
+    fn add(self, rhs: Vertex) -> Vertex {
+        Vertex {
+            position: (
+                self.position.0 + rhs.position.0,
+                self.position.1 + rhs.position.1,
+                self.position.2 + rhs.position.2,
+            ),
+        }
+    }
+}
+
+impl ops::Div<f32> for Vertex {
+    type Output = Vertex;
+    fn div(self, rhs: f32) -> Vertex {
+        Vertex {
+            position: (
+                self.position.0 / rhs,
+                self.position.1 / rhs,
+                self.position.2 / rhs,
+            ),
+        }
+    }
+}
 
 /// TODO: replace these structs with
 /// the built in CG math library.
@@ -20,28 +47,28 @@ pub struct Normal {
 // same as other do to
 impl_vertex!(Normal, normal);
 
-// static SBIDIM: f32 = 100.0;
-
-// // skybox vertices
-// pub static SB: [Vertex; 32] = {
-//     [Vertex {
-//         position: (0.0, 0.0, 0.0),
-//     }; 32]
-// };
-
-// // skybox indices
-// pub static SBI: [usize; 32] = { [0; 32] };
 
 // TODO: skybox textures
 
 /// yeah, the name is long, fight me.
-pub fn norms_from_verts_and_index(model_verts: &[Vertex], indices: &[u32]) -> Vec<Normal> {
+pub fn norms_from_verts_and_index(
+    model_verts: &[Vertex],
+    indices: &[u32],
+) -> (Vec<Normal>, [Vertex; 2]) {
     let mut model_normals: Vec<Normal> = vec![
         Normal {
             normal: (0.0, 0.0, 0.0),
         };
         model_verts.len()
     ];
+
+    let mut min_verts = Vertex {
+        position: (std::f32::MAX, std::f32::MAX, std::f32::MAX),
+    };
+
+    let mut max_verts = Vertex {
+        position: (std::f32::MIN, std::f32::MIN, std::f32::MIN),
+    };
 
     indices
         .chunks(3)
@@ -68,6 +95,39 @@ pub fn norms_from_verts_and_index(model_verts: &[Vertex], indices: &[u32]) -> Ve
                 let i = model_verts[i_c];
                 cgmath::Vector3::new(i.position.0, i.position.1, i.position.2)
             };
+
+            [v_a, v_b, v_c]
+                .iter()
+                .map(|vec| (vec.x, vec.y, vec.z))
+                .for_each(|(x, y, z)| {
+
+                    if x < min_verts.position.0 {
+                        min_verts.position.0 = x
+                    }
+
+                    if x > max_verts.position.0 {
+                        max_verts.position.0 = x
+                    }
+
+
+                    if y < min_verts.position.1 {
+                        min_verts.position.1 = y
+                    }
+
+                    if y > max_verts.position.1 {
+                        max_verts.position.1 = y
+                    }
+
+
+                    if z < min_verts.position.2 {
+                        min_verts.position.2 = z
+                    }
+
+                    if z > max_verts.position.2 {
+                        max_verts.position.2 = z
+                    }
+
+                });
 
             //compute the cross product
             let cross = (v_b - v_a).cross(v_c - v_b);
@@ -98,5 +158,5 @@ pub fn norms_from_verts_and_index(model_verts: &[Vertex], indices: &[u32]) -> Ve
             v.1 = vec.y;
             v.2 = vec.z;
         });
-    model_normals
+    (model_normals, [max_verts, min_verts])
 }
