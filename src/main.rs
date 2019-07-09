@@ -89,6 +89,8 @@ layout(location = 0) out vec4 f_color;
 
 const vec3 LIGHT = vec3(0.0, 0.0, 1.0);
 
+layout(set = 1, binding = 0) uniform samplerCube cubetex;
+
 void main() {
     float brightness = dot(normalize(v_normal), normalize(LIGHT));
     vec3 dark_color = vec3(0.6, 0.0, 0.0);
@@ -239,7 +241,8 @@ fn main() {
     );
 
     let mut recreate_swapchain = false;
-    let mut previous_frame = Box::new(sync::now(vk_state.device.clone())) as Box<GpuFuture>;
+    //let mut previous_frame = Box::new(sync::now(vk_state.device.clone())) as Box<GpuFuture>;
+    let mut previous_frame = Box::new(tex_future) as Box<GpuFuture>;
 
     // these are used to rotate the world projection
     // modifed in the mouse events after each frame,
@@ -309,12 +312,8 @@ fn main() {
             //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
             let aspect_ratio = vk_state.dimensions[0] as f32 / vk_state.dimensions[1] as f32;
 
-            let proj = cgmath::perspective(
-                Rad(std::f32::consts::FRAC_PI_2 / 2.0),
-                aspect_ratio,
-                0.01,
-                100.0,
-            );
+            let proj =
+                cgmath::perspective(Rad(std::f32::consts::FRAC_PI_4), aspect_ratio, 0.01, 100.0);
 
             let view = Matrix4::look_at(
                 Point3::new(0.3, 0.3, 1.0),
@@ -334,21 +333,22 @@ fn main() {
             uniform_buffer.next(uniform_data).unwrap()
         };
 
-        let set = Arc::new(
+        let set0 = Arc::new(
             PersistentDescriptorSet::start(pipeline.clone(), 0)
-                .add_buffer(uniform_buffer_subbuffer)
+                .add_buffer(uniform_buffer_subbuffer.clone())
                 .unwrap()
                 .build()
                 .unwrap(),
         );
 
-        // let tex_set = Arc::new(
-        //     PersistentDescriptorSet::start(pipeline.clone(), 1)
-        //         .add_sampled_image(texture.clone(), sampler.clone())
-        //         .unwrap()
-        //         .build()
-        //         .unwrap(),
-        // );
+
+        let set1 = Arc::new(
+            PersistentDescriptorSet::start(pipeline.clone(), 1)
+                .add_sampled_image(texture.clone(), sampler.clone())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
 
         let (image_num, acquire_future) =
             match swapchain::acquire_next_image(vk_state.swapchain.clone(), None) {
@@ -371,12 +371,13 @@ fn main() {
             vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
         )
         .unwrap()
+        // Draw the model
         .draw_indexed(
             pipeline.clone(),
             &DynamicState::none(),
             vec![vertex_buffer.clone(), normals_buffer.clone()],
             index_buffer.clone(),
-            set.clone(),
+            (set0.clone(), set1.clone()),
             (),
         )
         .unwrap()
