@@ -1,12 +1,11 @@
+use image::{ImageFormat, RgbaImage};
+use crate::geometry::Vertex;
 
-use image::{ImageBuffer, ImageFormat, RgbaImage};
-
-use crate::geometry::{Normal, Vertex};
 
 pub struct SkyBox {
-    textures: Vec<RgbaImage>,
-    // vertices: [f32;32],
-    // indices : [usize;36],
+    pub textures: Vec<RgbaImage>,
+    pub vertices: [Vertex; 24],
+    pub indices: [usize; 36],
 }
 
 static TEXBYTES: [&[u8]; 6] = [
@@ -20,6 +19,7 @@ static TEXBYTES: [&[u8]; 6] = [
 
 impl SkyBox {
     pub fn new() -> Self {
+
         let textures: Vec<RgbaImage> = TEXBYTES
             .iter()
             .map(|tex| {
@@ -29,6 +29,96 @@ impl SkyBox {
             })
             .collect();
 
-        SkyBox { textures }
+        let vertices = [
+            // Front
+            Vertex {
+                position: (-2.0, -2.0, 2.0),
+            },
+            Vertex {
+                position: (2.0, -2.0, 2.0),
+            },
+            Vertex {
+                position: (2.0, 2.0, 2.0),
+            },
+            Vertex {
+                position: (-2.0, 2.0, 2.0),
+            },
+            // Right
+            Vertex {
+                position: (2.0, -2.0, 2.0),
+            },
+            Vertex {
+                position: (2.0, -2.0, -2.0),
+            },
+            Vertex {
+                position: (2.0, 2.0, -2.0),
+            },
+            Vertex {
+                position: (2.0, 2.0, 2.0),
+            },
+            // Back
+            Vertex {
+                position: (-2.0, -2.0, -2.0),
+            },
+            Vertex {
+                position: (-2.0, 2.0, -2.0),
+            },
+            Vertex {
+                position: (2.0, 2.0, -2.0),
+            },
+            Vertex {
+                position: (2.0, -2.0, -2.0),
+            },
+            // Left
+            Vertex {
+                position: (-2.0, -2.0, 2.0),
+            },
+            Vertex {
+                position: (-2.0, 2.0, 2.0),
+            },
+            Vertex {
+                position: (-2.0, 2.0, -2.0),
+            },
+            Vertex {
+                position: (-2.0, -2.0, -2.0),
+            },
+            // Bottom
+            Vertex {
+                position: (-2.0, -2.0, 2.0),
+            },
+            Vertex {
+                position: (-2.0, -2.0, -2.0),
+            },
+            Vertex {
+                position: (2.0, -2.0, -2.0),
+            },
+            Vertex {
+                position: (2.0, -2.0, 2.0),
+            },
+            // Top
+            Vertex {
+                position: (-2.0, 2.0, 2.0),
+            },
+            Vertex {
+                position: (2.0, 2.0, 2.0),
+            },
+            Vertex {
+                position: (2.0, 2.0, -2.0),
+            },
+            Vertex {
+                position: (-2.0, 2.0, -2.0),
+            },
+        ];
+
+        let indices = [
+            0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
+            17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
+        ];
+
+        SkyBox {
+            textures,
+            vertices,
+            indices,
+        }
     }
 }

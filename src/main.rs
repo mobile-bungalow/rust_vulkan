@@ -25,7 +25,7 @@ use vulkano::device::Device;
 use vulkano::format::Format;
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
 use vulkano::image::attachment::AttachmentImage;
-use vulkano::image::SwapchainImage;
+use vulkano::image::{Dimensions, ImmutableImage, SwapchainImage};
 use vulkano::pipeline::vertex::TwoBuffersDefinition;
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
@@ -34,6 +34,8 @@ use vulkano::swapchain::{AcquireError, SwapchainCreationError};
 use vulkano::sync;
 use vulkano::sync::GpuFuture;
 use winit::Window;
+
+use vulkano::sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode};
 
 use std::sync::Arc;
 
@@ -123,6 +125,14 @@ fn main() {
 
     let skybox = SkyBox::new();
 
+    let image_data = skybox.textures.iter().cloned().map(|x| x.into_raw()).fold(
+        Vec::new(),
+        |mut agg: Vec<u8>, mut x| {
+            agg.append(&mut x);
+            agg
+        },
+    );
+
     // break the positions up into groups of three
     let model_verts: Vec<geometry::Vertex> = geom[0]
         .mesh
@@ -140,6 +150,31 @@ fn main() {
 
     let mut vk_state: vk::VKState = vk::VKState::vk_init().expect("initialization failed \n");
     let window = vk_state.surface.window();
+
+    let (texture, tex_future) = {
+        ImmutableImage::from_iter(
+            image_data.iter().cloned(),
+            Dimensions::Cubemap { size: 512 },
+            Format::R8G8B8A8Srgb,
+            vk_state.queue.clone(),
+        )
+        .unwrap()
+    };
+
+    let sampler = Sampler::new(
+        vk_state.device.clone(),
+        Filter::Linear,
+        Filter::Linear,
+        MipmapMode::Nearest,
+        SamplerAddressMode::Repeat,
+        SamplerAddressMode::Repeat,
+        SamplerAddressMode::Repeat,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+    )
+    .unwrap();
 
     let vertex_buffer = CpuAccessibleBuffer::from_iter(
         vk_state.device.clone(),
@@ -306,6 +341,14 @@ fn main() {
                 .build()
                 .unwrap(),
         );
+
+        // let tex_set = Arc::new(
+        //     PersistentDescriptorSet::start(pipeline.clone(), 1)
+        //         .add_sampled_image(texture.clone(), sampler.clone())
+        //         .unwrap()
+        //         .build()
+        //         .unwrap(),
+        // );
 
         let (image_num, acquire_future) =
             match swapchain::acquire_next_image(vk_state.swapchain.clone(), None) {
