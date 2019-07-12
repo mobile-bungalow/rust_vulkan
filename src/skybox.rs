@@ -1,20 +1,20 @@
-use image::{ImageFormat, RgbaImage};
-use crate::geometry::Vertex;
 
+use crate::geometry::Vertex;
+use image::{ImageFormat, RgbaImage};
 
 pub struct SkyBox {
     pub textures: Vec<RgbaImage>,
     pub vertices: [Vertex; 24],
-    pub indices: [usize; 36],
+    pub indices: Vec<u32>,
 }
-
+// order is str
 static TEXBYTES: [&[u8]; 6] = [
-    include_bytes!("skybox/arrakisday_bk.tga"),
-    include_bytes!("skybox/arrakisday_dn.tga"),
-    include_bytes!("skybox/arrakisday_ft.tga"),
-    include_bytes!("skybox/arrakisday_lf.tga"),
-    include_bytes!("skybox/arrakisday_rt.tga"),
-    include_bytes!("skybox/arrakisday_up.tga"),
+    include_bytes!("skybox/arrakisday_ft.tga"), //wrong
+    include_bytes!("skybox/arrakisday_bk.tga"), // correct
+    include_bytes!("skybox/arrakisday_up.tga"), // correct
+    include_bytes!("skybox/arrakisday_dn.tga"), // correct
+    include_bytes!("skybox/arrakisday_rt.tga"), // wrong
+    include_bytes!("skybox/arrakisday_lf.tga"), // correct
 ];
 
 impl SkyBox {
@@ -110,7 +110,7 @@ impl SkyBox {
             },
         ];
 
-        let indices = [
+        let indices = vec![
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
         ];

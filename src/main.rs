@@ -57,18 +57,22 @@ layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 
 layout(location = 0) out vec3 v_normal;
+layout(location = 1) out vec3 position_out;
+
 
 layout(set = 0, binding = 0) uniform Data {
     mat4 world;
     mat4 view;
     mat4 proj;
     mat4 translate;
+    bool is_skybox;
 } uniforms;
 
 void main() {
     mat4 worldview = uniforms.view * uniforms.world;
     v_normal = transpose(inverse(mat3(worldview))) * normal;
-    gl_Position = uniforms.proj * worldview * (uniforms.translate * vec4(position, 1.0)) ;
+    gl_Position = uniforms.proj * worldview * (uniforms.translate * vec4(position, 1.0));
+    position_out = position;
 }
 
 ",
@@ -85,18 +89,32 @@ mod fs {
 #version 450
 
 layout(location = 0) in vec3 v_normal;
+layout(location = 1) in vec3 position_out;
+
 layout(location = 0) out vec4 f_color;
 
 const vec3 LIGHT = vec3(0.0, 0.0, 1.0);
 
 layout(set = 1, binding = 0) uniform samplerCube cubetex;
 
+// this is a lazy hack, we will need model view matrix later
+layout(set = 0, binding = 0) uniform Data {
+    mat4 world;
+    mat4 view;
+    mat4 proj;
+    mat4 translate;
+    bool is_skybox;
+} uniforms;
+
 void main() {
     float brightness = dot(normalize(v_normal), normalize(LIGHT));
     vec3 dark_color = vec3(0.6, 0.0, 0.0);
     vec3 regular_color = vec3(1.0, 0.0, 0.0);
-    f_color = texture(cubetex, v_normal);
-    //f_color = vec4(mix(dark_color, regular_color, brightness), 1.0);
+    if (uniforms.is_skybox) {
+         f_color = texture(cubetex, position_out);
+    } else {
+        f_color = vec4(mix(dark_color, regular_color, brightness), 1.0);
+    }
 }
         ",
     }
@@ -199,6 +217,20 @@ fn main() {
     )
     .unwrap();
 
+    let skybox_vertices_buffer = CpuAccessibleBuffer::from_iter(
+        vk_state.device.clone(),
+        BufferUsage::all(),
+        skybox.vertices.iter().cloned(),
+    )
+    .unwrap();
+
+    let skybox_indices_buffer = CpuAccessibleBuffer::from_iter(
+        vk_state.device.clone(),
+        BufferUsage::all(),
+        skybox.indices.iter().cloned(),
+    )
+    .unwrap();
+
     let uniform_buffer =
         CpuBufferPool::<vs::ty::Data>::new(vk_state.device.clone(), BufferUsage::all());
 
@@ -241,8 +273,9 @@ fn main() {
     );
 
     let mut recreate_swapchain = false;
-    //let mut previous_frame = Box::new(sync::now(vk_state.device.clone())) as Box<GpuFuture>;
-    let mut previous_frame = Box::new(tex_future) as Box<GpuFuture>;
+    // NOTE : had to join the futures for correctness.
+    let mut previous_frame =
+        Box::new(tex_future.join(sync::now(vk_state.device.clone()))) as Box<GpuFuture>;
 
     // these are used to rotate the world projection
     // modifed in the mouse events after each frame,
@@ -328,10 +361,49 @@ fn main() {
                 view: (view * scale).into(),
                 proj: (proj).into(),
                 translate: translate.into(),
+                is_skybox: 0,
             };
 
             uniform_buffer.next(uniform_data).unwrap()
         };
+
+        let skybox_subbuffer = {
+            let rotation =
+                { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_y(Rad(y_delta)) };
+            // note: this teapot was meant for OpenGL where the origin is at the lower left
+            //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
+            let aspect_ratio = vk_state.dimensions[0] as f32 / vk_state.dimensions[1] as f32;
+
+            let proj =
+                cgmath::perspective(Rad(std::f32::consts::FRAC_PI_4), aspect_ratio, 0.01, 100.0);
+
+            let view = Matrix4::look_at(
+                Point3::new(0.3, 0.3, 1.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, -1.0, 0.0),
+            );
+
+            let scale = Matrix4::from_scale(10.0);
+
+            let uniform_data = vs::ty::Data {
+                world: Matrix4::from(rotation).into(),
+                view: (view * scale).into(),
+                proj: (proj).into(),
+                translate: translate.into(),
+                is_skybox: 1,
+            };
+
+            uniform_buffer.next(uniform_data).unwrap()
+        };
+
+
+        let texture_set = Arc::new(
+            PersistentDescriptorSet::start(pipeline.clone(), 1)
+                .add_sampled_image(texture.clone(), sampler.clone())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
 
         let set0 = Arc::new(
             PersistentDescriptorSet::start(pipeline.clone(), 0)
@@ -341,14 +413,14 @@ fn main() {
                 .unwrap(),
         );
 
-
-        let set1 = Arc::new(
-            PersistentDescriptorSet::start(pipeline.clone(), 1)
-                .add_sampled_image(texture.clone(), sampler.clone())
+        let skybox_geometry_set = Arc::new(
+            PersistentDescriptorSet::start(pipeline.clone(), 0)
+                .add_buffer(skybox_subbuffer.clone())
                 .unwrap()
                 .build()
                 .unwrap(),
         );
+
 
         let (image_num, acquire_future) =
             match swapchain::acquire_next_image(vk_state.swapchain.clone(), None) {
@@ -371,13 +443,26 @@ fn main() {
             vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
         )
         .unwrap()
+        //  draw skybox
+        .draw_indexed(
+            pipeline.clone(),
+            &DynamicState::none(),
+            vec![
+                skybox_vertices_buffer.clone(),
+                skybox_vertices_buffer.clone(),
+            ],
+            skybox_indices_buffer.clone(),
+            (skybox_geometry_set.clone(), texture_set.clone()),
+            (),
+        )
+        .unwrap()
         // Draw the model
         .draw_indexed(
             pipeline.clone(),
             &DynamicState::none(),
             vec![vertex_buffer.clone(), normals_buffer.clone()],
             index_buffer.clone(),
-            (set0.clone(), set1.clone()),
+            (set0.clone(), texture_set.clone()),
             (),
         )
         .unwrap()
