@@ -14,7 +14,6 @@ mod skybox;
 
 /// Vulkan imports, these are manifold , low level, and sinful.
 use cgmath::{Matrix3, Matrix4, Point3, Rad, Vector3};
-use image::ImageFormat;
 use skybox::SkyBox;
 
 use vulkano::buffer::cpu_pool::CpuBufferPool;
@@ -111,9 +110,11 @@ void main() {
     vec3 dark_color = vec3(0.6, 0.0, 0.0);
     vec3 regular_color = vec3(1.0, 0.0, 0.0);
     if (uniforms.is_skybox) {
-         f_color = texture(cubetex, position_out);
+        f_color = vec4(texture(cubetex, position_out).rgb, 1.0);
     } else {
-        f_color = vec4(mix(dark_color, regular_color, brightness), 1.0);
+        vec3 I = normalize(vec3(uniforms.world[3]) - position_out);
+        vec3 R = reflect(I, normalize(v_normal));
+        f_color = vec4(texture(cubetex, R).rgb, 1.0);
     }
 }
         ",
@@ -366,7 +367,7 @@ fn main() {
 
             uniform_buffer.next(uniform_data).unwrap()
         };
-
+        // todo remove duplicate code;
         let skybox_subbuffer = {
             let rotation =
                 { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_y(Rad(y_delta)) };
@@ -383,7 +384,10 @@ fn main() {
                 Vector3::new(0.0, -1.0, 0.0),
             );
 
-            let scale = Matrix4::from_scale(10.0);
+            let scale = Matrix4::from_scale(2.0);
+
+            // translate to center
+            let translate = Matrix4::from_translation(Vector3::from((0.0, 0.0, 0.0)));
 
             let uniform_data = vs::ty::Data {
                 world: Matrix4::from(rotation).into(),

@@ -7,13 +7,15 @@ pub struct SkyBox {
     pub vertices: [Vertex; 24],
     pub indices: Vec<u32>,
 }
-// order is str
+// order is strange, I had to brute force this solution
+// as it is not the same as any examples delivered by
+// opengl.
 static TEXBYTES: [&[u8]; 6] = [
-    include_bytes!("skybox/arrakisday_ft.tga"), //wrong
+    include_bytes!("skybox/arrakisday_ft.tga"), // correct
     include_bytes!("skybox/arrakisday_bk.tga"), // correct
     include_bytes!("skybox/arrakisday_up.tga"), // correct
     include_bytes!("skybox/arrakisday_dn.tga"), // correct
-    include_bytes!("skybox/arrakisday_rt.tga"), // wrong
+    include_bytes!("skybox/arrakisday_rt.tga"), // correct
     include_bytes!("skybox/arrakisday_lf.tga"), // correct
 ];
 
