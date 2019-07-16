@@ -119,8 +119,7 @@ void main() {
     if (uniforms.is_skybox) {
         f_color = texture(cubetex, vec3(frag_position));
     } else {
-
-        f_color = texture(cubetex, vec3(normalize(reflect(uniforms.look_dir, v_normal))));
+        f_color = texture(cubetex, vec3(normalize(reflect(normalize(uniforms.look_dir - vec3(frag_position)), v_normal))));
     }
 }
         ",
@@ -367,7 +366,7 @@ fn main() {
                 view: camera.into(),
                 proj: proj.into(),
                 translate: translate.into(),
-                look_dir: dir.into(),
+                look_dir: camera_pos.into(),
                 scale: scale.into(),
                 is_skybox: 0,
             };
@@ -386,7 +385,7 @@ fn main() {
                 view: camera.into(),
                 proj: proj.into(),
                 translate: translate.into(),
-                look_dir: dir.into(),
+                look_dir: camera_pos.into(),
                 scale: scale.into(),
                 is_skybox: 1,
             };
