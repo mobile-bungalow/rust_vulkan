@@ -12,6 +12,7 @@ mod geometry;
 /// This loads textures the skybox textures and indices
 mod skybox;
 
+
 /// Vulkan imports, these are manifold , low level, and sinful.
 use cgmath::{Matrix3, Matrix4, Point3, Rad, Vector3};
 use skybox::SkyBox;
@@ -32,7 +33,8 @@ use vulkano::swapchain;
 use vulkano::swapchain::{AcquireError, SwapchainCreationError};
 use vulkano::sync;
 use vulkano::sync::GpuFuture;
-use winit::Window;
+
+use winit::{ElementState, KeyboardInput, VirtualKeyCode, Window};
 
 use vulkano::sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode};
 
@@ -43,7 +45,7 @@ use clap::{App, Arg};
 
 mod vk;
 
-static DAMPENING: f32 = 0.01;
+static DAMPENING: f32 = 0.005;
 
 mod vs {
     vulkano_shaders::shader! {
@@ -56,22 +58,29 @@ layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 
 layout(location = 0) out vec3 v_normal;
-layout(location = 1) out vec3 position_out;
+layout(location = 1) out vec4 position_out;
 
 
 layout(set = 0, binding = 0) uniform Data {
-    mat4 world;
     mat4 view;
     mat4 proj;
     mat4 translate;
+    mat4 scale;
+    vec3 look_dir;
     bool is_skybox;
 } uniforms;
 
 void main() {
-    mat4 worldview = uniforms.view * uniforms.world;
+    mat4 worldview = (uniforms.view * uniforms.scale);
     v_normal = transpose(inverse(mat3(worldview))) * normal;
     gl_Position = uniforms.proj * worldview * (uniforms.translate * vec4(position, 1.0));
-    position_out = position;
+
+    if(uniforms.is_skybox){
+        position_out = vec4(position, 1.0);
+    } else {
+        position_out = gl_Position;
+    }
+
 }
 
 ",
@@ -88,33 +97,30 @@ mod fs {
 #version 450
 
 layout(location = 0) in vec3 v_normal;
-layout(location = 1) in vec3 position_out;
+layout(location = 1) in vec4 frag_position;
 
 layout(location = 0) out vec4 f_color;
 
-const vec3 LIGHT = vec3(0.0, 0.0, 1.0);
-
 layout(set = 1, binding = 0) uniform samplerCube cubetex;
 
-// this is a lazy hack, we will need model view matrix later
 layout(set = 0, binding = 0) uniform Data {
-    mat4 world;
     mat4 view;
     mat4 proj;
     mat4 translate;
+    mat4 scale;
+    vec3 look_dir; // the direction we are looking
     bool is_skybox;
 } uniforms;
 
+const vec3 camera_position = vec3(0.3,0.3,1.0);
+
 void main() {
-    float brightness = dot(normalize(v_normal), normalize(LIGHT));
-    vec3 dark_color = vec3(0.6, 0.0, 0.0);
-    vec3 regular_color = vec3(1.0, 0.0, 0.0);
+    //float brightness = dot(normalize(v_normal), normalize(LIGHT));
     if (uniforms.is_skybox) {
-        f_color = vec4(texture(cubetex, position_out).rgb, 1.0);
+        f_color = texture(cubetex, vec3(frag_position));
     } else {
-        vec3 I = normalize(vec3(uniforms.world[3]) - position_out);
-        vec3 R = reflect(I, normalize(v_normal));
-        f_color = vec4(texture(cubetex, R).rgb, 1.0);
+
+        f_color = texture(cubetex, vec3(normalize(reflect(uniforms.look_dir, v_normal))));
     }
 }
         ",
@@ -285,6 +291,9 @@ fn main() {
     let mut x_delta: f32 = 0.0;
     let mut mouse_state: winit::ElementState = winit::ElementState::Released;
 
+    let mut camera_pos = Point3::new(0.3, 0.3, 1.0);
+    let mut camera_velocity = Vector3::new(0.0, 0.0, 0.0);
+    let camera_dir = Vector3::new(-0.3, -0.3, -1.0);
     // translation matrix
     // which moves the model to the origin.
     let offset = extent[0] + extent[1];
@@ -302,7 +311,19 @@ fn main() {
     // dimension to 0.3, because that is a nice size .
     let scale = 0.3 / max;
 
+    // shoemake arcball camera set up
+    let aspect_ratio = vk_state.dimensions[0] as f32 / vk_state.dimensions[1] as f32;
+    let proj = cgmath::perspective(Rad(std::f32::consts::FRAC_PI_4), aspect_ratio, 0.01, 100.0);
+
     loop {
+        let rotation =
+            { Matrix3::from_angle_y(Rad(y_delta)) * Matrix3::from_angle_x(Rad(x_delta)) };
+
+        let dir = rotation * camera_dir;
+        camera_pos += camera_velocity;
+        let camera: Matrix4<f32> =
+            Matrix4::look_at_dir(camera_pos, dir, Vector3::new(0.0, -1.0, 0.0));
+
         previous_frame.cleanup_finished();
 
         if recreate_swapchain {
@@ -336,32 +357,18 @@ fn main() {
 
             recreate_swapchain = false;
         }
-
         // !! important !! this is what gets fed to our friends
         // the vertex and frag shaders.
         let uniform_buffer_subbuffer = {
-            let rotation =
-                { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_y(Rad(y_delta)) };
-            // note: this teapot was meant for OpenGL where the origin is at the lower left
-            //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
-            let aspect_ratio = vk_state.dimensions[0] as f32 / vk_state.dimensions[1] as f32;
-
-            let proj =
-                cgmath::perspective(Rad(std::f32::consts::FRAC_PI_4), aspect_ratio, 0.01, 100.0);
-
-            let view = Matrix4::look_at(
-                Point3::new(0.3, 0.3, 1.0),
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, -1.0, 0.0),
-            );
 
             let scale = Matrix4::from_scale(scale);
 
             let uniform_data = vs::ty::Data {
-                world: Matrix4::from(rotation).into(),
-                view: (view * scale).into(),
-                proj: (proj).into(),
+                view: camera.into(),
+                proj: proj.into(),
                 translate: translate.into(),
+                look_dir: dir.into(),
+                scale: scale.into(),
                 is_skybox: 0,
             };
 
@@ -369,31 +376,18 @@ fn main() {
         };
         // todo remove duplicate code;
         let skybox_subbuffer = {
-            let rotation =
-                { Matrix3::from_angle_x(Rad(x_delta)) * Matrix3::from_angle_y(Rad(y_delta)) };
-            // note: this teapot was meant for OpenGL where the origin is at the lower left
-            //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
-            let aspect_ratio = vk_state.dimensions[0] as f32 / vk_state.dimensions[1] as f32;
 
-            let proj =
-                cgmath::perspective(Rad(std::f32::consts::FRAC_PI_4), aspect_ratio, 0.01, 100.0);
-
-            let view = Matrix4::look_at(
-                Point3::new(0.3, 0.3, 1.0),
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, -1.0, 0.0),
-            );
-
-            let scale = Matrix4::from_scale(2.0);
+            let scale = Matrix4::from_scale(4.0);
 
             // translate to center
             let translate = Matrix4::from_translation(Vector3::from((0.0, 0.0, 0.0)));
 
             let uniform_data = vs::ty::Data {
-                world: Matrix4::from(rotation).into(),
-                view: (view * scale).into(),
-                proj: (proj).into(),
+                view: camera.into(),
+                proj: proj.into(),
                 translate: translate.into(),
+                look_dir: dir.into(),
+                scale: scale.into(),
                 is_skybox: 1,
             };
 
@@ -520,13 +514,54 @@ fn main() {
             winit::Event::DeviceEvent {
                 event: winit::DeviceEvent::MouseMotion { delta: (x, y), .. },
                 ..
-            } => match mouse_state {
-                winit::ElementState::Pressed => {
-                    x_delta += DAMPENING * y as f32;
-                    y_delta -= DAMPENING * x as f32;
+            } => {
+                if mouse_state == ElementState::Released {
+                    return;
                 }
-                winit::ElementState::Released => {}
-            },
+                x_delta += DAMPENING * y as f32;
+                y_delta -= DAMPENING * x as f32;
+            }
+
+            winit::Event::WindowEvent {
+                event:
+                    winit::WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                virtual_keycode: key,
+                                state,
+                                ..
+                            },
+                        ..
+                    },
+
+                ..
+            } => {
+                if state == ElementState::Pressed {
+                    match key {
+                        Some(VirtualKeyCode::W) => {
+                            camera_velocity.z -= 0.02;
+                        }
+                        Some(VirtualKeyCode::A) => {
+                            camera_velocity.x += 0.02;
+                        }
+                        Some(VirtualKeyCode::S) => {
+                            camera_velocity.z += 0.02;
+                        }
+                        Some(VirtualKeyCode::D) => {
+                            camera_velocity.x -= 0.02;
+                        }
+                        Some(VirtualKeyCode::Space) => {
+                            camera_velocity.y += 0.02;
+                        }
+                        Some(VirtualKeyCode::LShift) => {
+                            camera_velocity.y -= 0.02;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    camera_velocity = Vector3::new(0.0, 0.0, 0.0);
+                }
+            }
             _ => (),
         });
         if done {
