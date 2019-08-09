@@ -21,8 +21,8 @@ it may exit with a panic if your file is in the wrong format. or if you resize t
 
 TODO : 
 
-- [ ] skybox
-- [ ] move all vertex and index data to cgmath if possible
+- [X] skybox
+- [X] move all vertex and index data to cgmath if possible
 - [ ] refraction in glsl
 - [X] refactor code into structs
-- [ ] refactor even more code into structs
+- [X] refactor even more code into structs
