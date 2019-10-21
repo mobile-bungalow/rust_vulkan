@@ -2,7 +2,7 @@
 
 an attempt at writing a general refraction shader in vulkan with rust as an excercise and learning experience. most code is boiler plate, but can be run wafter following some prereqs.
 
-install the vulkan libraries as described in (this)[https://github.com/vulkano-rs/vulkano/blob/master/README.md] readme. 
+install the vulkan libraries as described in [this](https://github.com/vulkano-rs/vulkano/blob/master/README.md) readme. 
 
 then run the src with cargo on any wavefront object file
 
